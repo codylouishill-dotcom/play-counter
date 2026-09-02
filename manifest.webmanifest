@@ -1,0 +1,18 @@
+{
+  "name": "Play Counter",
+  "short_name": "Play Counter",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0E1614",
+  "theme_color": "#0E1614",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
