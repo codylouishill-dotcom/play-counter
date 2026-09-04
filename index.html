@@ -384,6 +384,7 @@ const UNITS = [{
   label: "SPECIAL",
   positions: ["KO", "KR", "P", "PR", "FG"]
 }];
+const BUILD = "202609042256";
 const STORE_KEY = "mpr:state:v4";
 const STANDALONE = typeof window !== "undefined" && window.__standalone === true;
 const SAVE_MS = STANDALONE ? 0 : 600;
@@ -2303,6 +2304,13 @@ function Roster({
       fontSize: 12
     }
   }, "Reset to team roster")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.muted,
+      marginBottom: 12,
+      letterSpacing: 1
+    }
+  }, "BUILD ", BUILD), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: C.muted,
