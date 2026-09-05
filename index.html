@@ -357,7 +357,7 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
   useMemo,
   useRef
 } = React;
-const C = {
+const DARK = {
   bg: "#0E1614",
   panel: "#16211E",
   panel2: "#1E2C28",
@@ -367,8 +367,29 @@ const C = {
   cyan: "#7FD4DC",
   lime: "#B4E04B",
   amber: "#F2A93B",
-  red: "#EF6461"
+  red: "#EF6461",
+  selBg: "rgba(127,212,220,0.18)",
+  eligBg: "rgba(180,224,75,0.12)",
+  warnBg: "rgba(242,169,59,0.14)",
+  shortBg: "rgba(239,100,97,0.10)"
 };
+const LIGHT = {
+  bg: "#F4F2EC",
+  panel: "#FFFFFF",
+  panel2: "#E6EBE5",
+  line: "#CDD4CB",
+  chalk: "#14211D",
+  muted: "#5C6F69",
+  cyan: "#0B6E7A",
+  lime: "#4A7A12",
+  amber: "#9C5D00",
+  red: "#BE2A25",
+  selBg: "rgba(11,110,122,0.14)",
+  eligBg: "rgba(74,122,18,0.14)",
+  warnBg: "rgba(156,93,0,0.13)",
+  shortBg: "rgba(190,42,37,0.10)"
+};
+let C = DARK;
 const DISPLAY = '"Arial Narrow", "Helvetica Neue", Arial, sans-serif';
 const BODY = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const UNITS = [{
@@ -384,7 +405,7 @@ const UNITS = [{
   label: "SPECIAL",
   positions: ["KO", "KR", "P", "PR", "FG"]
 }];
-const BUILD = "202609042256";
+const BUILD = "202609050030";
 const STORE_KEY = "mpr:state:v4";
 const STANDALONE = typeof window !== "undefined" && window.__standalone === true;
 const SAVE_MS = STANDALONE ? 0 : 600;
@@ -530,7 +551,8 @@ const blank = () => ({
   running: false,
   scoreEvents: [],
   qSnapshots: {},
-  games: []
+  games: [],
+  theme: "dark"
 });
 function App() {
   const [st, setSt] = useState(blank);
@@ -538,6 +560,12 @@ function App() {
   const [unit, setUnit] = useState("def");
   const [sel, setSel] = useState(null); // {kind:'slot',slotId} | {kind:'field',id} | {kind:'player',id}
   const [stGroup, setStGroup] = useState("ko");
+  C = st.theme === "light" ? LIGHT : DARK;
+  useEffect(() => {
+    if (typeof document !== "undefined" && document.body) {
+      document.body.style.background = C.bg;
+    }
+  }, [st.theme]);
   const [view, setView] = useState("list");
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
@@ -581,7 +609,12 @@ function App() {
     if (!loaded) return;
     const set = new Set();
     ["off", "def"].forEach(u => (st.depth[u] || []).forEach(sl => {
-      if (sl.active && sl.ids[0]) set.add(sl.ids[0]);
+      if (!sl.active) return;
+      const first = sl.ids.find(id => {
+        const pl = st.players.find(x => x.id === id);
+        return pl && !pl.absent;
+      });
+      if (first) set.add(first);
     }));
     if (st.players.some(p => !!p.starter !== set.has(p.id))) {
       setSt(s => ({
@@ -655,8 +688,8 @@ function App() {
     if (slotted) return slots.map(s => (st.onField[unit] || {})[s.id]).filter(Boolean);
     return flatField;
   }, [slotted, slots, st.onField, unit, flatField]);
-  const need = p => p.exempt ? 0 : Math.max(0, teamMin - (counts[p.id] ? counts[p.id].total : 0));
-  const bench = useMemo(() => st.players.filter(p => !fieldIds.includes(p.id)).sort((a, b) => need(b) - need(a) || (counts[a.id]?.total || 0) - (counts[b.id]?.total || 0)), [st.players, fieldIds, counts, teamMin]);
+  const need = p => p.exempt || p.absent ? 0 : Math.max(0, teamMin - (counts[p.id] ? counts[p.id].total : 0));
+  const bench = useMemo(() => st.players.filter(p => !p.absent && !fieldIds.includes(p.id)).sort((a, b) => need(b) - need(a) || (counts[a.id]?.total || 0) - (counts[b.id]?.total || 0)), [st.players, fieldIds, counts, teamMin]);
   const posOf = p => p.pos && p.pos[unit] || [];
   const tagSwap = (a, b) => {
     const A = posOf(a),
@@ -693,8 +726,9 @@ function App() {
     const m = {
       ...(s.onField[unit] || {})
     };
+    const here = new Set(unitSlots.map(x => x.id));
     Object.keys(m).forEach(k => {
-      if (m[k] === playerId) m[k] = null;
+      if (m[k] === playerId && here.has(k)) m[k] = null;
     });
     m[slotId] = playerId;
     return {
@@ -740,10 +774,17 @@ function App() {
   const fillStarters = () => {
     if (slotted) {
       up(s => {
-        const m = {};
+        const m = {
+          ...(s.onField[unit] || {})
+        };
         const used = new Set();
-        (s.depth[unit] || []).filter(x => x.active).forEach(x => {
-          const pick = x.ids.find(i => !used.has(i));
+        slots.forEach(x => {
+          m[x.id] = null;
+          const pick = x.ids.find(i => {
+            if (used.has(i)) return false;
+            const pl = s.players.find(q => q.id === i);
+            return pl && !pl.absent;
+          });
           if (pick) {
             m[x.id] = pick;
             used.add(pick);
@@ -855,7 +896,9 @@ function App() {
         them: score.them
       },
       counts: snap,
-      names
+      names,
+      lineups: JSON.parse(JSON.stringify(st.onField)),
+      depth: JSON.parse(JSON.stringify(st.depth))
     };
     up(s => ({
       ...s,
@@ -868,10 +911,89 @@ function App() {
       running: false
     }));
   };
+  const setAbsent = (id, absent) => up(s => {
+    const onField = {
+      ...s.onField
+    };
+    if (absent) {
+      ["off", "def", "st"].forEach(u => {
+        const v = onField[u];
+        if (Array.isArray(v)) onField[u] = v.filter(i => i !== id);else if (v && typeof v === "object") {
+          const m = {
+            ...v
+          };
+          Object.keys(m).forEach(k => {
+            if (m[k] === id) m[k] = null;
+          });
+          onField[u] = m;
+        }
+      });
+    }
+    return {
+      ...s,
+      onField,
+      players: s.players.map(p => p.id === id ? {
+        ...p,
+        absent
+      } : p)
+    };
+  });
   const deleteGame = id => up(s => ({
     ...s,
     games: (s.games || []).filter(g => g.id !== id)
   }));
+  const download = (name, text, type) => {
+    try {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text], {
+        type
+      }));
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    } catch (e) {
+      /* download blocked in this container */
+    }
+  };
+  const exportBackup = () => {
+    const payload = {
+      kind: "playcounter-backup",
+      build: BUILD,
+      saved: new Date().toISOString(),
+      players: st.players,
+      depth: st.depth,
+      onField: st.onField,
+      games: st.games || [],
+      theme: st.theme
+    };
+    download("playcounter-backup-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(payload, null, 2), "application/json");
+  };
+  const importBackup = file => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const d = JSON.parse(String(reader.result));
+        if (d.kind !== "playcounter-backup" || !Array.isArray(d.players)) {
+          window.alert("That doesn't look like a Play Counter backup.");
+          return;
+        }
+        up(s => ({
+          ...s,
+          players: d.players,
+          depth: d.depth || s.depth,
+          onField: d.onField || s.onField,
+          games: Array.isArray(d.games) ? d.games : s.games,
+          theme: d.theme || s.theme
+        }));
+        window.alert("Restored " + d.players.length + " players and " + (d.games || []).length + " saved games.");
+      } catch (e) {
+        window.alert("Could not read that file.");
+      }
+    };
+    reader.readAsText(file);
+  };
   const exportCsv = () => {
     const rows = [["Number", "Name", "Starter", "Tracked", "Total", "Offense", "Defense", "Special", "Still needs"]];
     st.players.forEach(p => {
@@ -892,20 +1014,7 @@ function App() {
     });
     rows.push(["Score", score.us + "-" + score.them]);
     const csv = rows.map(r => r.map(v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"').join(",")).join("\n");
-    try {
-      const blob = new Blob([csv], {
-        type: "text/csv"
-      });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "play-counts.csv";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-    } catch (e) {
-      /* download blocked in this container */
-    }
+    download("play-counts.csv", csv, "text/csv");
   };
   const clearGame = () => up(s => ({
     ...s,
@@ -950,11 +1059,13 @@ function App() {
   const saveUnit = () => {
     up(s => {
       const m = s.onField[unit] || {};
+      const here = new Set(unitSlots.map(x => x.id));
       return {
         ...s,
         depth: {
           ...s.depth,
           [unit]: (s.depth[unit] || []).map(sl => {
+            if (!here.has(sl.id)) return sl;
             const occ = m[sl.id];
             if (!occ) return sl;
             return {
@@ -968,7 +1079,7 @@ function App() {
     setSel(null);
   };
   const fillByNeed = () => {
-    const order = st.players.filter(p => !p.exempt).sort((a, b) => need(b) - need(a) || (counts[a.id]?.total || 0) - (counts[b.id]?.total || 0));
+    const order = st.players.filter(p => !p.exempt && !p.absent).sort((a, b) => need(b) - need(a) || (counts[a.id]?.total || 0) - (counts[b.id]?.total || 0));
     up(s => {
       const m = {
         ...(s.onField[unit] || {})
@@ -1081,6 +1192,11 @@ function App() {
       ...s,
       clock: s.qLen,
       running: false
+    })),
+    theme: st.theme,
+    onToggleTheme: () => up(s => ({
+      ...s,
+      theme: s.theme === "light" ? "dark" : "light"
     }))
   }), tab === "game" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(UnitTabs, {
     unit: unit,
@@ -1208,7 +1324,7 @@ function App() {
     }
   }, "Nobody charted here yet. Pick anyone from the bench."), selSlot.ids.map((pid, i) => {
     const p = byId[pid];
-    if (!p) return null;
+    if (!p || p.absent) return null;
     const inNow = (st.onField[unit] || {})[selSlot.id] === pid;
     const t = counts[pid]?.total || 0;
     const owed = need(p);
@@ -1230,7 +1346,7 @@ function App() {
         fontFamily: BODY,
         textAlign: "left",
         color: C.chalk,
-        background: inNow ? "rgba(127,212,220,0.16)" : "transparent",
+        background: inNow ? C.selBg : "transparent",
         border: "1px solid " + (inNow ? C.cyan : C.line)
       }
     }, /*#__PURE__*/React.createElement("span", {
@@ -1390,6 +1506,9 @@ function App() {
     loadDemo: loadDemo,
     clearGame: clearGame,
     exportCsv: exportCsv,
+    setAbsent: setAbsent,
+    exportBackup: exportBackup,
+    importBackup: importBackup,
     reseed: () => up(s => ({
       ...s,
       ...seed(),
@@ -1424,7 +1543,9 @@ function Scoreboard({
   onUndoScore,
   onEndQ,
   onToggleClock,
-  onResetClock
+  onResetClock,
+  theme,
+  onToggleTheme
 }) {
   const [open, setOpen] = useState(false);
   const mm = String(Math.floor(st.clock / 60)).padStart(2, "0");
@@ -1517,7 +1638,7 @@ function Scoreboard({
       display: "flex",
       justifyContent: "space-between",
       padding: "6px 12px",
-      background: teamMin > 10 ? "rgba(242,169,59,0.14)" : "transparent",
+      background: teamMin > 10 ? C.warnBg : "transparent",
       borderTop: "1px solid " + C.line
     }
   }, /*#__PURE__*/React.createElement("span", {
@@ -1555,6 +1676,18 @@ function Scoreboard({
     onClick: () => onScore(t, p),
     style: pointBtn
   }, "+", p)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onToggleTheme,
+    style: {
+      ...ghostBtn,
+      padding: 10
+    }
+  }, theme === "light" ? "Switch to dark" : "Switch to light")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8
@@ -1630,7 +1763,7 @@ const Banner = ({
 }) => /*#__PURE__*/React.createElement("div", {
   style: {
     padding: "8px 12px",
-    background: "rgba(242,169,59,0.14)",
+    background: C.warnBg,
     color,
     fontSize: 12
   }
@@ -1646,7 +1779,7 @@ function SlotRow({
 }) {
   const total = c ? c.total : 0;
   const bar = !p ? C.line : p.exempt ? C.muted : need === 0 ? C.lime : need > teamMin * 0.6 ? C.red : C.amber;
-  const bg = state === "selected" ? "rgba(127,212,220,0.18)" : state === "eligible" ? "rgba(180,224,75,0.10)" : "transparent";
+  const bg = state === "selected" ? C.selBg : state === "eligible" ? C.eligBg : "transparent";
   return /*#__PURE__*/React.createElement("button", {
     onClick: onTap,
     style: {
@@ -1745,7 +1878,7 @@ function PlayerRow({
 }) {
   const total = c ? c.total : 0;
   const bar = p.exempt ? C.muted : need === 0 ? C.lime : need > teamMin * 0.6 ? C.red : C.amber;
-  const bg = state === "selected" ? "rgba(127,212,220,0.18)" : state === "eligible" ? "rgba(180,224,75,0.10)" : "transparent";
+  const bg = state === "selected" ? C.selBg : state === "eligible" ? C.eligBg : "transparent";
   const op = state === "dim" ? 0.28 : state === "faded" ? 0.5 : 1;
   return /*#__PURE__*/React.createElement("button", {
     onClick: onTap,
@@ -1913,7 +2046,7 @@ function FieldView({
         cursor: "pointer",
         textAlign: "center",
         fontFamily: BODY,
-        background: selected ? "rgba(127,212,220,0.22)" : charted ? "rgba(180,224,75,0.16)" : C.panel2,
+        background: selected ? C.selBg : charted ? C.eligBg : C.panel2,
         border: "1px solid " + edge,
         borderStyle: p ? "solid" : "dashed",
         color: C.chalk
@@ -2168,9 +2301,15 @@ function Depth({
     }, p.num), /*#__PURE__*/React.createElement("span", {
       style: {
         flex: 1,
-        fontSize: 13
+        fontSize: 13,
+        opacity: p.absent ? 0.5 : 1
       }
-    }, p.name), /*#__PURE__*/React.createElement("span", {
+    }, p.name, p.absent && /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.red,
+        fontSize: 10
+      }
+    }, " \xB7 away")), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 11,
         color: C.muted,
@@ -2208,7 +2347,10 @@ function Roster({
   reseed,
   loadDemo,
   clearGame,
-  exportCsv
+  exportCsv,
+  setAbsent,
+  exportBackup,
+  importBackup
 }) {
   const [num, setNum] = useState("");
   const [name, setName] = useState("");
@@ -2345,6 +2487,45 @@ function Roster({
     }
   }, "Export CSV")), /*#__PURE__*/React.createElement("div", {
     style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 8,
+      alignItems: "stretch"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: exportBackup,
+    style: {
+      ...miniBtn,
+      flex: 1,
+      padding: "10px 4px"
+    }
+  }, "Back up everything"), /*#__PURE__*/React.createElement("label", {
+    style: {
+      ...miniBtn,
+      flex: 1,
+      padding: "10px 4px",
+      textAlign: "center",
+      display: "block"
+    }
+  }, "Restore from file", /*#__PURE__*/React.createElement("input", {
+    type: "file",
+    accept: "application/json,.json",
+    style: {
+      display: "none"
+    },
+    onChange: e => {
+      const f = e.target.files && e.target.files[0];
+      if (f) importBackup(f);
+      e.target.value = "";
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.muted,
+      marginBottom: 14
+    }
+  }, "The backup file holds your roster, both depth charts, current lineups and every saved game. Do this before any app update."), /*#__PURE__*/React.createElement("div", {
+    style: {
       fontSize: 11,
       color: C.muted,
       marginBottom: 14
@@ -2356,7 +2537,8 @@ function Roster({
       borderRadius: 8,
       padding: 10,
       marginBottom: 10,
-      border: "1px solid " + C.line
+      border: "1px solid " + (p.absent ? C.red : C.line),
+      opacity: p.absent ? 0.65 : 1
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2418,13 +2600,18 @@ function Roster({
     })),
     label: "Not tracked",
     color: C.amber
-  })), p.exempt && /*#__PURE__*/React.createElement("input", {
+  }), /*#__PURE__*/React.createElement(Toggle, {
+    on: p.absent,
+    onClick: () => setAbsent(p.id, !p.absent),
+    label: "Absent",
+    color: C.red
+  })), (p.exempt || p.absent) && /*#__PURE__*/React.createElement("input", {
     value: p.exemptReason,
     onChange: e => patch(p.id, q => ({
       ...q,
       exemptReason: e.target.value
     })),
-    placeholder: "Reason",
+    placeholder: p.absent ? "Reason (not at game)" : "Reason (injury, missed practice)",
     style: {
       ...input,
       width: "100%",
@@ -2655,8 +2842,8 @@ function Sheet({
     live[e.team] += e.pts;
     if (tally[e.team][e.pts] !== undefined) tally[e.team][e.pts]++;
   });
-  const tracked = st.players.filter(p => !p.starter && !p.exempt).sort((a, b) => Number(a.num) - Number(b.num));
-  const untracked = st.players.filter(p => p.exempt);
+  const tracked = st.players.filter(p => !p.starter && !p.exempt && !p.absent).sort((a, b) => Number(a.num) - Number(b.num));
+  const untracked = st.players.filter(p => p.exempt || p.absent);
   const short = tracked.filter(p => (counts[p.id]?.total || 0) < teamMin);
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2812,7 +2999,7 @@ function Sheet({
         gap: 12,
         padding: "12px 10px",
         borderBottom: "1px solid " + C.line,
-        background: met ? "transparent" : "rgba(239,100,97,0.10)"
+        background: met ? "transparent" : C.shortBg
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -2880,7 +3067,7 @@ function Sheet({
       color: C.muted,
       fontSize: 12
     }
-  }, p.exemptReason || "—")))), /*#__PURE__*/React.createElement("div", {
+  }, p.exemptReason || (p.absent ? "Not at game" : "—"))))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 18,
       fontSize: 12,
